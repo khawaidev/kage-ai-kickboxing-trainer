@@ -24,8 +24,12 @@ import { SettingsPage } from '@/features/settings/SettingsPage'
 function FullScreenLoader() {
   return (
     <div className="grid min-h-screen place-items-center bg-paper">
-      <div className="flex flex-col items-center gap-3">
-        <span className="font-brush text-4xl text-seal animate-pulse-rec">影</span>
+      <div className="flex flex-col items-center gap-4">
+        <img
+          src="/icon.png"
+          alt="KAGE"
+          className="h-20 w-20 rounded-[1.25rem] shadow-soft animate-pulse-rec"
+        />
         <span className="text-sm text-muted">Loading KAGE…</span>
       </div>
     </div>

@@ -14,14 +14,14 @@ export default defineConfig({
     react(),
     VitePWA({
       registerType: 'prompt',
-      includeAssets: ['favicon.svg', 'apple-touch-icon.png'],
+      includeAssets: ['favicon-32.png', 'apple-touch-icon.png', 'icon.png'],
       manifest: {
         name: 'KAGE — AI Combat Coach',
         short_name: 'KAGE',
         description:
           'Wuxia-inspired AI boxing coach with live voice guidance and post-session video analysis.',
-        theme_color: '#171717',
-        background_color: '#171717',
+        theme_color: '#070707',
+        background_color: '#070707',
         display: 'standalone',
         orientation: 'portrait',
         scope: '/',
@@ -39,7 +39,7 @@ export default defineConfig({
             type: 'image/png',
           },
           {
-            src: 'pwa-512x512.png',
+            src: 'pwa-maskable-512x512.png',
             sizes: '512x512',
             type: 'image/png',
             purpose: 'maskable',

@@ -32,9 +32,7 @@ function Dashboard() {
           <p className="text-[10px] text-muted">Saturday, 17 Oct</p>
           <p className="font-display text-base font-bold text-ink">Ready, Fighter.</p>
         </div>
-        <span className="grid h-8 w-8 place-items-center rounded-lg bg-seal font-brush text-sm text-paper-white">
-          拳
-        </span>
+        <img src="/icon.png" alt="KAGE" className="h-8 w-8 rounded-lg object-cover" />
       </div>
 
       <div className="rounded-2xl bg-gradient-to-br from-seal to-seal-deep p-3 text-paper-white shadow-seal">
