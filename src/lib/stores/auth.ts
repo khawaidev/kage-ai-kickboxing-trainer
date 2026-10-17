@@ -1,23 +1,17 @@
 import { create } from 'zustand'
-import {
-  authService,
-  EmailConfirmationRequiredError,
-  type SignUpInput,
-} from '@/lib/services/auth'
+import { authService } from '@/lib/services/auth'
 import type { User } from '@/lib/types'
+
+let unsubscribe: (() => void) | null = null
 
 interface AuthState {
   user: User | null
   status: 'loading' | 'authenticated' | 'unauthenticated'
   error: string | null
-  pendingConfirmationEmail: string | null
   init: () => Promise<void>
-  signUp: (input: SignUpInput) => Promise<void>
-  signIn: (email: string, password: string) => Promise<void>
+  signInWithGoogle: () => Promise<void>
   signInAsGuest: () => Promise<void>
   signOut: () => Promise<void>
-  resendConfirmation: (email: string) => Promise<void>
-  clearPendingConfirmation: () => void
   updateProfile: (patch: Partial<User>) => Promise<void>
   deleteAccount: () => Promise<void>
 }
@@ -26,59 +20,44 @@ export const useAuthStore = create<AuthState>((set) => ({
   user: null,
   status: 'loading',
   error: null,
-  pendingConfirmationEmail: null,
 
   init: async () => {
     const user = await authService.getCurrentUser()
     set({ user, status: user ? 'authenticated' : 'unauthenticated' })
-  },
 
-  signUp: async (input) => {
-    set({ error: null })
-    try {
-      const user = await authService.signUp(input)
-      set({ user, status: 'authenticated', pendingConfirmationEmail: null })
-    } catch (e) {
-      if (e instanceof EmailConfirmationRequiredError) {
-        set({
-          user: null,
-          status: 'unauthenticated',
-          error: null,
-          pendingConfirmationEmail: input.email,
-        })
-        return
-      }
-      set({ error: e instanceof Error ? e.message : 'Sign up failed' })
-      throw e
+    if (!unsubscribe) {
+      unsubscribe = authService.onAuthChange(() => {
+        // Defer to avoid re-entering Supabase's auth lock from its own callback.
+        setTimeout(() => {
+          void authService.getCurrentUser().then((next) =>
+            set({ user: next, status: next ? 'authenticated' : 'unauthenticated' }),
+          )
+        }, 0)
+      })
     }
   },
 
-  signIn: async (email, password) => {
+  signInWithGoogle: async () => {
     set({ error: null })
     try {
-      const user = await authService.signIn(email, password)
-      set({ user, status: 'authenticated', pendingConfirmationEmail: null })
+      const user = await authService.signInWithGoogle()
+      // Real Supabase redirects the browser; only mock mode returns a user here.
+      if (user) set({ user, status: 'authenticated' })
     } catch (e) {
-      set({ error: e instanceof Error ? e.message : 'Sign in failed' })
+      set({ error: e instanceof Error ? e.message : 'Google sign-in failed' })
       throw e
     }
   },
 
   signInAsGuest: async () => {
     const user = await authService.signInAsGuest()
-    set({ user, status: 'authenticated', pendingConfirmationEmail: null })
+    set({ user, status: 'authenticated' })
   },
 
   signOut: async () => {
     await authService.signOut()
     set({ user: null, status: 'unauthenticated' })
   },
-
-  resendConfirmation: async (email) => {
-    await authService.resendConfirmation(email)
-  },
-
-  clearPendingConfirmation: () => set({ pendingConfirmationEmail: null }),
 
   updateProfile: async (patch) => {
     const user = await authService.updateProfile(patch)

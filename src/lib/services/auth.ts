@@ -1,37 +1,18 @@
 import type { User as SupaUser } from '@supabase/supabase-js'
 import { apiUrl } from '@/lib/api'
 import { supabase } from '@/lib/supabase/client'
-import {
-  userSchema,
-  type ExperienceLevel,
-  type Sport,
-  type User,
-} from '@/lib/types'
-
-export interface SignUpInput {
-  email: string
-  password: string
-  displayName: string
-}
-
-/** Thrown when sign-up succeeds but the account needs email confirmation. */
-export class EmailConfirmationRequiredError extends Error {
-  constructor() {
-    super('Check your email to confirm your account, then sign in.')
-    this.name = 'EmailConfirmationRequiredError'
-  }
-}
+import { userSchema, type ExperienceLevel, type Sport, type User } from '@/lib/types'
 
 export interface AuthService {
   getCurrentUser(): Promise<User | null>
-  signUp(input: SignUpInput): Promise<User>
-  signIn(email: string, password: string): Promise<User>
+  /** Starts the Google OAuth redirect. Returns a user only in offline/mock mode. */
+  signInWithGoogle(): Promise<User | null>
   signInAsGuest(): Promise<User>
   signOut(): Promise<void>
-  resetPassword(email: string): Promise<void>
-  resendConfirmation(email: string): Promise<void>
   updateProfile(patch: Partial<User>): Promise<User>
   deleteAccount(): Promise<void>
+  /** Subscribe to auth state changes; returns an unsubscribe function. */
+  onAuthChange(listener: () => void): () => void
 }
 
 const STORAGE_KEY = 'kage.auth.user'
@@ -45,13 +26,18 @@ interface ProfileRow {
   created_at: string
 }
 
+function metaName(supaUser: SupaUser): string | undefined {
+  const meta = (supaUser.user_metadata ?? {}) as Record<string, unknown>
+  return (meta.display_name || meta.full_name || meta.name) as string | undefined
+}
+
 function mapUser(supaUser: SupaUser, profile?: ProfileRow | null): User {
   return userSchema.parse({
     id: supaUser.id,
     email: supaUser.email ?? `${supaUser.id}@kage.local`,
     display_name:
       profile?.display_name ??
-      (supaUser.user_metadata?.display_name as string | undefined) ??
+      metaName(supaUser) ??
       supaUser.email?.split('@')[0] ??
       'Fighter',
     experience_level: (profile?.experience_level as ExperienceLevel) ?? 'beginner',
@@ -65,12 +51,12 @@ function makeId(prefix: string): string {
   return `${prefix}_${Math.random().toString(36).slice(2, 10)}`
 }
 
-/** Where the confirmation / recovery email link should return the user. */
+/** Where Supabase should return the user after the OAuth round-trip. */
 function redirectTo(): string | undefined {
-  return typeof window !== 'undefined' ? window.location.origin : undefined
+  return typeof window !== 'undefined' ? `${window.location.origin}/auth` : undefined
 }
 
-/** Production auth backed by Supabase. */
+/** Production auth backed by Supabase (Google OAuth). */
 class SupabaseAuth implements AuthService {
   async getCurrentUser(): Promise<User | null> {
     const { data } = await supabase!.auth.getSession()
@@ -84,58 +70,29 @@ class SupabaseAuth implements AuthService {
     return mapUser(supaUser, profile)
   }
 
-  async signUp({ email, password, displayName }: SignUpInput): Promise<User> {
-    const { data, error } = await supabase!.auth.signUp({
-      email,
-      password,
+  async signInWithGoogle(): Promise<User | null> {
+    const { error } = await supabase!.auth.signInWithOAuth({
+      provider: 'google',
       options: {
-        data: { display_name: displayName },
-        emailRedirectTo: redirectTo(),
+        redirectTo: redirectTo(),
+        queryParams: { prompt: 'select_account' },
       },
     })
     if (error) throw new Error(error.message)
-    if (!data.user) throw new Error('Sign up did not return a user.')
-
-    // Email confirmation enabled: no session yet. Let the UI show a friendly
-    // "check your inbox" state instead of treating this as a failure.
-    if (!data.session) throw new EmailConfirmationRequiredError()
-    return mapUser(data.user)
-  }
-
-  async signIn(email: string, password: string): Promise<User> {
-    const { data, error } = await supabase!.auth.signInWithPassword({ email, password })
-    if (error) throw new Error(error.message)
-    if (!data.user) throw new Error('Sign in did not return a user.')
-    return mapUser(data.user)
+    // The browser is now navigating to Google; a user arrives after the redirect.
+    return null
   }
 
   async signInAsGuest(): Promise<User> {
     const { data, error } = await supabase!.auth.signInAnonymously()
     if (error || !data.user) {
-      // Anonymous sign-ins may be disabled in the project.
-      throw new Error('Guest sign-in is unavailable. Please create an account.')
+      throw new Error('Guest sign-in is unavailable. Please continue with Google.')
     }
     return mapUser(data.user)
   }
 
   async signOut(): Promise<void> {
     await supabase!.auth.signOut()
-  }
-
-  async resetPassword(email: string): Promise<void> {
-    const { error } = await supabase!.auth.resetPasswordForEmail(email, {
-      redirectTo: redirectTo(),
-    })
-    if (error) throw new Error(error.message)
-  }
-
-  async resendConfirmation(email: string): Promise<void> {
-    const { error } = await supabase!.auth.resend({
-      type: 'signup',
-      email,
-      options: { emailRedirectTo: redirectTo() },
-    })
-    if (error) throw new Error(error.message)
   }
 
   async updateProfile(patch: Partial<User>): Promise<User> {
@@ -166,6 +123,11 @@ class SupabaseAuth implements AuthService {
     }
     await supabase!.auth.signOut()
   }
+
+  onAuthChange(listener: () => void): () => void {
+    const { data } = supabase!.auth.onAuthStateChange(() => listener())
+    return () => data.subscription.unsubscribe()
+  }
 }
 
 /** Offline/dev fallback when Supabase env vars are absent. */
@@ -176,11 +138,12 @@ class MockAuth implements AuthService {
     const parsed = userSchema.safeParse(JSON.parse(raw))
     return parsed.success ? parsed.data : null
   }
-  async signUp({ email, displayName }: SignUpInput): Promise<User> {
+
+  async signInWithGoogle(): Promise<User> {
     const user: User = {
-      id: makeId('user'),
-      email,
-      display_name: displayName || email.split('@')[0],
+      id: makeId('google'),
+      email: 'google.user@kage.local',
+      display_name: 'Google User',
       experience_level: 'beginner',
       preferred_sport: 'boxing',
       preferred_language: 'en',
@@ -189,12 +152,13 @@ class MockAuth implements AuthService {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(user))
     return user
   }
-  async signIn(email: string): Promise<User> {
+
+  async signInAsGuest(): Promise<User> {
     const existing = await this.getCurrentUser()
     const user: User = {
-      id: existing?.id ?? makeId('user'),
-      email,
-      display_name: existing?.display_name ?? email.split('@')[0],
+      id: existing?.id ?? makeId('guest'),
+      email: 'guest@kage.local',
+      display_name: existing?.display_name ?? 'Guest Fighter',
       experience_level: existing?.experience_level ?? 'beginner',
       preferred_sport: existing?.preferred_sport ?? 'boxing',
       preferred_language: existing?.preferred_language ?? 'en',
@@ -203,14 +167,11 @@ class MockAuth implements AuthService {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(user))
     return user
   }
-  async signInAsGuest(): Promise<User> {
-    return this.signIn('guest@kage.local')
-  }
+
   async signOut(): Promise<void> {
     localStorage.removeItem(STORAGE_KEY)
   }
-  async resetPassword(): Promise<void> {}
-  async resendConfirmation(): Promise<void> {}
+
   async updateProfile(patch: Partial<User>): Promise<User> {
     const current = await this.getCurrentUser()
     if (!current) throw new Error('Not authenticated')
@@ -218,8 +179,13 @@ class MockAuth implements AuthService {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(updated))
     return updated
   }
+
   async deleteAccount(): Promise<void> {
     localStorage.removeItem(STORAGE_KEY)
+  }
+
+  onAuthChange(): () => void {
+    return () => undefined
   }
 }
 
