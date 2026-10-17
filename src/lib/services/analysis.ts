@@ -5,6 +5,7 @@ import {
   type Report,
   type TrainingSession,
 } from '@/lib/types'
+import { apiUrl } from '@/lib/api'
 import { getAccessToken, isSupabaseConfigured } from '@/lib/supabase/client'
 
 export type AnalysisStage =
@@ -281,7 +282,7 @@ class RemoteAnalysis implements AnalysisService {
     onProgress: (p: AnalysisProgress) => void,
   ): Promise<Report> {
     const token = await getAccessToken()
-    const res = await fetch('/api/analyze', {
+    const res = await fetch(apiUrl('/api/analyze'), {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',

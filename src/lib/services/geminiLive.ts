@@ -1,3 +1,4 @@
+import { apiUrl } from '@/lib/api'
 import { getAccessToken } from '@/lib/supabase/client'
 import {
   MockLiveCoach,
@@ -48,7 +49,7 @@ async function blobToBase64(blob: Blob): Promise<string> {
 
 async function fetchToken(): Promise<TokenResponse> {
   const accessToken = await getAccessToken()
-  const res = await fetch('/api/live-token', {
+  const res = await fetch(apiUrl('/api/live-token'), {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',

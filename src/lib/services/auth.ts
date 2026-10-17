@@ -1,4 +1,5 @@
 import type { User as SupaUser } from '@supabase/supabase-js'
+import { apiUrl } from '@/lib/api'
 import { supabase } from '@/lib/supabase/client'
 import {
   userSchema,
@@ -138,7 +139,7 @@ class SupabaseAuth implements AuthService {
     const { data } = await supabase!.auth.getSession()
     const token = data.session?.access_token
     if (token) {
-      await fetch('/api/account', {
+      await fetch(apiUrl('/api/account'), {
         method: 'DELETE',
         headers: { Authorization: `Bearer ${token}` },
       }).catch(() => undefined)
