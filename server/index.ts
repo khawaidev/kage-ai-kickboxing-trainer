@@ -12,9 +12,15 @@ import { liveTokenRouter } from './routes/liveToken.js'
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const app = express()
 
+// CORS_ORIGIN is a comma-separated allowlist. Use "*" to allow any origin.
+const allowedOrigins = env.corsOrigin
+  .split(',')
+  .map((origin) => origin.trim())
+  .filter(Boolean)
+
 app.use(
   cors({
-    origin: isProd ? true : env.corsOrigin,
+    origin: allowedOrigins.includes('*') ? true : allowedOrigins,
     credentials: true,
   }),
 )
