@@ -14,6 +14,14 @@ export interface SignUpInput {
   displayName: string
 }
 
+/** Thrown when sign-up succeeds but the account needs email confirmation. */
+export class EmailConfirmationRequiredError extends Error {
+  constructor() {
+    super('Check your email to confirm your account, then sign in.')
+    this.name = 'EmailConfirmationRequiredError'
+  }
+}
+
 export interface AuthService {
   getCurrentUser(): Promise<User | null>
   signUp(input: SignUpInput): Promise<User>
@@ -21,6 +29,7 @@ export interface AuthService {
   signInAsGuest(): Promise<User>
   signOut(): Promise<void>
   resetPassword(email: string): Promise<void>
+  resendConfirmation(email: string): Promise<void>
   updateProfile(patch: Partial<User>): Promise<User>
   deleteAccount(): Promise<void>
 }
@@ -56,6 +65,11 @@ function makeId(prefix: string): string {
   return `${prefix}_${Math.random().toString(36).slice(2, 10)}`
 }
 
+/** Where the confirmation / recovery email link should return the user. */
+function redirectTo(): string | undefined {
+  return typeof window !== 'undefined' ? window.location.origin : undefined
+}
+
 /** Production auth backed by Supabase. */
 class SupabaseAuth implements AuthService {
   async getCurrentUser(): Promise<User | null> {
@@ -74,22 +88,17 @@ class SupabaseAuth implements AuthService {
     const { data, error } = await supabase!.auth.signUp({
       email,
       password,
-      options: { data: { display_name: displayName } },
+      options: {
+        data: { display_name: displayName },
+        emailRedirectTo: redirectTo(),
+      },
     })
     if (error) throw new Error(error.message)
     if (!data.user) throw new Error('Sign up did not return a user.')
 
-    // If email confirmation is enabled there is no session yet — try to sign in.
-    if (!data.session) {
-      const { data: signInData, error: signInError } = await supabase!.auth.signInWithPassword({
-        email,
-        password,
-      })
-      if (signInError || !signInData.user) {
-        throw new Error('Check your email to confirm your account, then sign in.')
-      }
-      return mapUser(signInData.user)
-    }
+    // Email confirmation enabled: no session yet. Let the UI show a friendly
+    // "check your inbox" state instead of treating this as a failure.
+    if (!data.session) throw new EmailConfirmationRequiredError()
     return mapUser(data.user)
   }
 
@@ -114,7 +123,18 @@ class SupabaseAuth implements AuthService {
   }
 
   async resetPassword(email: string): Promise<void> {
-    const { error } = await supabase!.auth.resetPasswordForEmail(email)
+    const { error } = await supabase!.auth.resetPasswordForEmail(email, {
+      redirectTo: redirectTo(),
+    })
+    if (error) throw new Error(error.message)
+  }
+
+  async resendConfirmation(email: string): Promise<void> {
+    const { error } = await supabase!.auth.resend({
+      type: 'signup',
+      email,
+      options: { emailRedirectTo: redirectTo() },
+    })
     if (error) throw new Error(error.message)
   }
 
@@ -190,6 +210,7 @@ class MockAuth implements AuthService {
     localStorage.removeItem(STORAGE_KEY)
   }
   async resetPassword(): Promise<void> {}
+  async resendConfirmation(): Promise<void> {}
   async updateProfile(patch: Partial<User>): Promise<User> {
     const current = await this.getCurrentUser()
     if (!current) throw new Error('Not authenticated')

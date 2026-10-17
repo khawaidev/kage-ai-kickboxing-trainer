@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { Link, Navigate, useLocation, useNavigate } from 'react-router-dom'
-import { ArrowLeft, Loader2, Sparkles } from 'lucide-react'
+import { ArrowLeft, Loader2, MailCheck, Sparkles } from 'lucide-react'
 import { useAuthStore } from '@/lib/stores/auth'
 import { useIntakeStore } from '@/lib/stores/intake'
 import { analytics } from '@/lib/services/analytics'
@@ -11,7 +11,16 @@ import { InkBackdrop } from '@/components/ui/InkBackdrop'
 type Mode = 'signin' | 'signup'
 
 export function AuthPage() {
-  const { status, signIn, signUp, signInAsGuest, error } = useAuthStore()
+  const {
+    status,
+    signIn,
+    signUp,
+    signInAsGuest,
+    error,
+    pendingConfirmationEmail,
+    resendConfirmation,
+    clearPendingConfirmation,
+  } = useAuthStore()
   const navigate = useNavigate()
   const location = useLocation()
   const intake = useIntakeStore()
@@ -33,7 +42,9 @@ export function AuthPage() {
       if (mode === 'signup') {
         await signUp({ email, password, displayName })
         analytics.track('signup_completed')
-        navigate('/onboarding', { replace: true })
+        if (!useAuthStore.getState().pendingConfirmationEmail) {
+          navigate('/onboarding', { replace: true })
+        }
       } else {
         await signIn(email, password)
         navigate('/dashboard', { replace: true })
@@ -48,6 +59,15 @@ export function AuthPage() {
   const guest = async () => {
     await signInAsGuest()
     navigate('/onboarding', { replace: true })
+  }
+
+  const resend = async () => {
+    if (!pendingConfirmationEmail) return
+    try {
+      await resendConfirmation(pendingConfirmationEmail)
+    } catch {
+      /* ignore — the notice stays visible */
+    }
   }
 
   return (
@@ -79,7 +99,11 @@ export function AuthPage() {
           </div>
         )}
 
-        <div className="mt-6 grid grid-cols-2 gap-2 rounded-2xl border border-ink/10 bg-paper-white p-1">
+        {pendingConfirmationEmail ? (
+          <ConfirmationNotice email={pendingConfirmationEmail} onResend={resend} onBack={clearPendingConfirmation} />
+        ) : (
+          <>
+            <div className="mt-6 grid grid-cols-2 gap-2 rounded-2xl border border-ink/10 bg-paper-white p-1">
           {(['signup', 'signin'] as Mode[]).map((m) => (
             <button
               key={m}
@@ -144,6 +168,8 @@ export function AuthPage() {
         <Button variant="secondary" fullWidth onClick={() => void guest()}>
           Continue as guest
         </Button>
+          </>
+        )}
 
         <p className="mt-6 text-center text-xs text-muted">
           By continuing you agree that AI coaching may be inaccurate and is not a substitute for a
@@ -176,5 +202,45 @@ function Field({ label, value, onChange, type = 'text', ...rest }: FieldProps) {
         {...rest}
       />
     </label>
+  )
+}
+
+interface ConfirmationNoticeProps {
+  email: string
+  onResend: () => void
+  onBack: () => void
+}
+
+function ConfirmationNotice({ email, onResend, onBack }: ConfirmationNoticeProps) {
+  const [sent, setSent] = useState(false)
+  return (
+    <div className="mt-6 rounded-2xl border border-sage/30 bg-sage/10 p-5 text-center">
+      <div className="mx-auto grid h-12 w-12 place-items-center rounded-full bg-sage/20 text-sage-deep">
+        <MailCheck size={22} />
+      </div>
+      <h2 className="mt-3 font-display text-lg font-bold text-ink">Confirm your email</h2>
+      <p className="mt-1.5 text-sm text-muted">
+        We sent a confirmation link to <span className="font-medium text-ink">{email}</span>. Open it to
+        activate your account, then sign in.
+      </p>
+      <Button
+        className="mt-4"
+        fullWidth
+        disabled={sent}
+        onClick={() => {
+          onResend()
+          setSent(true)
+        }}
+      >
+        {sent ? 'Confirmation email sent' : 'Resend confirmation email'}
+      </Button>
+      <button
+        type="button"
+        onClick={onBack}
+        className="mt-3 text-xs font-medium text-muted hover:text-ink focus-ring"
+      >
+        Back to sign in
+      </button>
+    </div>
   )
 }
