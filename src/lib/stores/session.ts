@@ -22,6 +22,8 @@ interface SessionState {
   feedback: Record<string, ReportFeedback>
   activeConfig: SessionConfig
   activeSessionId: string | null
+  /** Owner of the locally persisted data. Used to isolate accounts per browser. */
+  ownerId: string | null
 
   setActiveConfig: (patch: Partial<SessionConfig>) => void
   startSession: (userId: string) => TrainingSession
@@ -56,6 +58,7 @@ export const useSessionStore = create<SessionState>()(
       feedback: {},
       activeConfig: { ...DEFAULT_SESSION_CONFIG },
       activeSessionId: null,
+      ownerId: null,
 
       setActiveConfig: (patch) =>
         set((s) => ({ activeConfig: { ...s.activeConfig, ...patch } })),
@@ -76,7 +79,7 @@ export const useSessionStore = create<SessionState>()(
           recording_size_bytes: null,
           created_at: now,
         }
-        set((s) => ({ sessions: [session, ...s.sessions], activeSessionId: session.id }))
+        set((s) => ({ sessions: [session, ...s.sessions], activeSessionId: session.id, ownerId: userId }))
         void pushSession(session)
         return session
       },
@@ -139,6 +142,18 @@ export const useSessionStore = create<SessionState>()(
         set((s) => ({ feedback: { ...s.feedback, [findingId]: value } })),
 
       hydrate: async (userId) => {
+        // Local data belongs to whoever was signed in last. If that is a
+        // different account (or none), drop it so accounts never mix. The same
+        // account re-login keeps its local copy and merges anything remote.
+        if (get().ownerId !== userId) {
+          set({
+            sessions: [],
+            reports: {},
+            feedback: {},
+            activeSessionId: null,
+            ownerId: userId,
+          })
+        }
         const remote = await fetchRemoteSessions(userId)
         if (remote.sessions.length === 0 && Object.keys(remote.reports).length === 0) {
           return
@@ -154,7 +169,7 @@ export const useSessionStore = create<SessionState>()(
       },
 
       clearAll: () =>
-        set({ sessions: [], reports: {}, feedback: {}, activeSessionId: null }),
+        set({ sessions: [], reports: {}, feedback: {}, activeSessionId: null, ownerId: null }),
     }),
     {
       name: 'kage.sessions',
