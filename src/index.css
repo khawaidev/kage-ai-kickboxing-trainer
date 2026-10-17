@@ -1,0 +1,94 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    color-scheme: light;
+  }
+
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+
+  body {
+    @apply bg-paper text-ink font-sans antialiased;
+    overscroll-behavior-y: none;
+    -webkit-tap-highlight-color: transparent;
+    text-rendering: optimizeLegibility;
+  }
+
+  ::selection {
+    @apply bg-seal/20 text-seal-deep;
+  }
+
+  input,
+  select,
+  textarea,
+  button {
+    font: inherit;
+  }
+
+  /* Safe-area helpers for installed PWAs */
+  .pt-safe {
+    padding-top: env(safe-area-inset-top);
+  }
+  .pb-safe {
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+  .no-scrollbar {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+}
+
+@layer components {
+  /* Primary elevated surface on the rice-paper canvas. */
+  .ink-panel {
+    @apply bg-paper-white/95 border border-ink/10 rounded-2xl shadow-soft;
+  }
+
+  .paper-panel {
+    @apply bg-paper-white text-ink border border-ink/10 rounded-2xl shadow-soft;
+  }
+
+  /* Muted, recessed surface (rows, wells, inputs). */
+  .well {
+    @apply bg-ink/[0.04] border border-ink/10 rounded-xl;
+  }
+
+  /* Dark surface, retained for video overlays and seal accents. */
+  .surface-ink {
+    @apply bg-ink-charcoal text-paper border border-white/10 rounded-2xl;
+  }
+
+  .brush-divider {
+    height: 2px;
+    background: linear-gradient(
+      90deg,
+      transparent,
+      rgba(23, 23, 23, 0.35) 20%,
+      rgba(23, 23, 23, 0.35) 80%,
+      transparent
+    );
+  }
+
+  .focus-ring {
+    @apply outline-none focus-visible:ring-2 focus-visible:ring-seal focus-visible:ring-offset-2 focus-visible:ring-offset-paper;
+  }
+
+  .hairline {
+    @apply border-ink/10;
+  }
+}
+
+@layer utilities {
+  .text-balance {
+    text-wrap: balance;
+  }
+}
